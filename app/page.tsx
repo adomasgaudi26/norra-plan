@@ -459,12 +459,18 @@ const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
 };
 
 const DEFAULT_ELO = 500;
+const HUMAN_DEFAULT_ELO = 1000;
+const MAX_SELECTED = 5;
 
-const initialTasks: Task[] = seedData.map(({ scores: _scores, done: _legacyDone, initialElo = DEFAULT_ELO, ...task }) => ({
+function getInitialElo(taskId: string, explicitElo?: number) {
+  return explicitElo ?? (taskId.startsWith("brief-") ? HUMAN_DEFAULT_ELO : DEFAULT_ELO);
+}
+
+const initialTasks: Task[] = seedData.map(({ scores: _scores, done: _legacyDone, initialElo, ...task }) => ({
   ...task,
   ...taskDetails[task.id],
   origin: task.id.startsWith("brief-") ? "human" : "agent",
-  history: periods.map((date) => ({ date, score: initialElo })),
+  history: periods.map((date) => ({ date, score: getInitialElo(task.id, initialElo) })),
 }));
 
 const INITIAL_TIME_MINUTES = 16 * 60 + 45;
@@ -490,15 +496,45 @@ const K_FACTOR = 32;
 const STORAGE_KEY = "elo-plan-state-v6";
 const LEDGER_STORAGE_KEY = "norra-elo-ledger-v8";
 const CATEGORY_STORAGE_KEY = "elo-plan-categories-v1";
-const MAX_SELECTED = 5;
+const DELETED_TASK_IDS_KEY = "elo-plan-deleted-task-ids-v1";
 const INITIAL_TOP_IDS = [
-  "brief-human-top-five",
-  "brief-local-json-server",
-  "visual-language",
-  "sections",
-  "catalog",
+  ...initialTasks
+    .filter((task) => task.origin === "human")
+    .slice(-MAX_SELECTED)
+    .reverse()
+    .map((task) => task.id),
 ];
 const INITIAL_BOTTOM_IDS = ["polish", "responsive", "checks", "task-layer", "screenshot"];
+
+function getHumanTopIds(taskList: Task[]) {
+  return taskList
+    .filter((task) => task.origin === "human")
+    .slice(-MAX_SELECTED)
+    .reverse()
+    .map((task) => task.id);
+}
+
+function getDeletedTaskIds() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DELETED_TASK_IDS_KEY) ?? "[]");
+    return new Set<string>(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function promoteHumanTasks(categoryState: CategoryState, taskList: Task[]): CategoryState {
+  const knownTaskIds = new Set(taskList.map((task) => task.id));
+  const humanTopIds = getHumanTopIds(taskList);
+  const top = [...humanTopIds, ...categoryState.top]
+    .filter((id, index, ids) => ids.indexOf(id) === index)
+    .filter((id) => knownTaskIds.has(id))
+    .slice(0, MAX_SELECTED);
+  const bottom = categoryState.bottom.filter(
+    (id) => knownTaskIds.has(id) && !top.includes(id),
+  );
+  return { top, bottom };
+}
 
 function formatScore(score: number) {
   return new Intl.NumberFormat("en-US").format(Math.round(score));
@@ -570,13 +606,20 @@ export default function Home() {
           ...task,
           origin: task.origin ?? getTaskOrigin(task.id),
         }));
-          const valid =
+        const knownTaskIds = new Set(initialTasks.map((task) => task.id));
+        const deletedTaskIds = getDeletedTaskIds();
+        const storedTaskIds = new Set(normalized.map((task) => task.id));
+        const newlySeededTasks = initialTasks.filter(
+          (task) => !storedTaskIds.has(task.id) && !deletedTaskIds.has(task.id),
+        );
+        const valid =
           Array.isArray(parsed) &&
           parsed.length <= initialTasks.length &&
           new Set(parsed.map((task) => task.id)).size === parsed.length &&
-            normalized.every(
+          normalized.every(
             (task) =>
               typeof task.id === "string" &&
+              knownTaskIds.has(task.id) &&
               typeof task.name === "string" &&
               typeof task.codename === "string" &&
               typeof task.description === "string" &&
@@ -585,7 +628,7 @@ export default function Home() {
               Array.isArray(task.history) &&
               task.history.length === periods.length,
           );
-        if (valid) setTasks(normalized);
+        if (valid) setTasks([...normalized, ...newlySeededTasks]);
       } catch {
         window.localStorage.removeItem(STORAGE_KEY);
       }
@@ -598,11 +641,13 @@ export default function Home() {
   }, [storageReady, tasks]);
 
   useEffect(() => {
+    if (!storageReady || categoryStorageReady) return;
     const saved = window.localStorage.getItem(CATEGORY_STORAGE_KEY);
+    let savedCategories: CategoryState | null = null;
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as CategoryState;
-        const knownTaskIds = new Set(initialTasks.map((task) => task.id));
+        const knownTaskIds = new Set(tasks.map((task) => task.id));
         const validIds = (ids: unknown): ids is string[] =>
           Array.isArray(ids) &&
           ids.length <= MAX_SELECTED &&
@@ -612,13 +657,19 @@ export default function Home() {
           validIds(parsed.top) &&
           validIds(parsed.bottom) &&
           new Set([...parsed.top, ...parsed.bottom]).size === parsed.top.length + parsed.bottom.length;
-        if (valid) setCategories({ top: parsed.top, bottom: parsed.bottom });
+        if (valid) savedCategories = parsed;
       } catch {
         window.localStorage.removeItem(CATEGORY_STORAGE_KEY);
       }
     }
+
+    const fallbackCategories: CategoryState = {
+      top: INITIAL_TOP_IDS.filter((id) => tasks.some((task) => task.id === id)),
+      bottom: INITIAL_BOTTOM_IDS.filter((id) => tasks.some((task) => task.id === id)),
+    };
+    setCategories(promoteHumanTasks(savedCategories ?? fallbackCategories, tasks));
     setCategoryStorageReady(true);
-  }, []);
+  }, [categoryStorageReady, storageReady, tasks]);
 
   useEffect(() => {
     if (categoryStorageReady) {
@@ -632,6 +683,11 @@ export default function Home() {
       try {
         const parsed = JSON.parse(saved) as LedgerEntry[];
         const knownTaskIds = new Set(initialTasks.map((task) => task.id));
+        const deletedTaskIds = getDeletedTaskIds();
+        const recordedTaskIds = new Set(parsed.map((entry) => entry.taskId));
+        const newlySeededEntries = initialLedger.filter(
+          (entry) => !recordedTaskIds.has(entry.taskId) && !deletedTaskIds.has(entry.taskId),
+        );
         const valid =
           Array.isArray(parsed) &&
           parsed.every(
@@ -646,7 +702,7 @@ export default function Home() {
               typeof entry.elo === "number" &&
               Number.isFinite(entry.elo),
           );
-        if (valid) setLedger(parsed);
+        if (valid) setLedger([...parsed, ...newlySeededEntries]);
       } catch {
         window.localStorage.removeItem(LEDGER_STORAGE_KEY);
       }
@@ -768,6 +824,9 @@ export default function Home() {
       bottom: current.bottom.filter((id) => id !== taskId),
     }));
     setLedger((current) => current.filter((entry) => entry.taskId !== taskId));
+    const deletedTaskIds = getDeletedTaskIds();
+    deletedTaskIds.add(taskId);
+    window.localStorage.setItem(DELETED_TASK_IDS_KEY, JSON.stringify([...deletedTaskIds]));
   }
 
   function rate(winnerId: string, loserId: string) {
