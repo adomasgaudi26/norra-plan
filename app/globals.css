@@ -29,6 +29,7 @@ body {
     #ffffff;
   color: #000000;
   font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -711,6 +712,13 @@ input {
 }
 
 @media (max-width: 700px) {
+  main.min-h-screen {
+    padding-top: 24px;
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(96px, calc(24px + env(safe-area-inset-bottom)));
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+
   .version-badge {
     right: max(12px, env(safe-area-inset-right));
     bottom: max(12px, env(safe-area-inset-bottom));
@@ -718,37 +726,154 @@ input {
     padding: 0 12px 0 13px;
   }
 
+  section[aria-label="Task rating"] {
+    width: 100%;
+    max-width: none;
+  }
+
+  section[aria-label="Task rating"] > div {
+    grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .duel-button {
+    min-height: 44px;
+    overflow: hidden;
+    padding-bottom: 9px;
+  }
+
+  section[aria-label="Norre recreation plan"] {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  section[aria-label="Norre recreation plan"] > div:first-child {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  section[aria-label="Norre recreation plan"] > div:first-child > span {
+    display: none;
+  }
+
   .time-panel-header {
     display: block;
   }
 
   .time-panel-controls {
-    align-items: flex-start;
+    width: 100%;
+    align-items: stretch;
     margin-top: 16px;
   }
 
   .time-status {
-    margin-top: 13px;
+    min-height: 24px;
+    margin-top: 0;
     justify-content: flex-start;
   }
 
+  .record-snapshot-button {
+    min-height: 44px;
+    width: 100%;
+  }
+
   .elo-chart-stage {
-    height: 330px;
+    height: 280px;
     margin-top: 20px;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .task-row {
-    grid-template-columns: minmax(108px, 0.85fr) minmax(0, 1.7fr) auto;
-    gap: 9px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .task-row-label {
+    display: none;
+  }
+
+  .task-bar {
+    height: 36px;
+    min-width: 0;
+  }
+
+  .bar-fill {
+    max-width: 100%;
+    padding-left: 4px;
+  }
+
+  .bar-codename {
+    max-width: 100%;
+    min-width: 0;
+    min-height: 26px;
+    padding: 5px 8px;
+  }
+
+  .bar-codename > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .category-actions {
+    grid-column: 1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+    opacity: 1;
   }
 
   .category-button {
-    padding: 5px 5px;
-    font-size: 7px;
+    min-height: 34px;
+    padding: 0 9px;
+    font-size: 8px;
   }
 
   .task-hover-description {
-    max-width: calc(100vw - 86px);
+    max-width: calc(100vw - 40px);
+    padding: 7px 9px 8px;
+    overflow-wrap: anywhere;
   }
 
+  .ssot-ledger summary {
+    min-height: 52px;
+    gap: 8px 10px;
+  }
+
+  .ssot-ledger-meta {
+    max-width: 54%;
+    white-space: normal;
+    text-align: right;
+  }
+
+  .ssot-ledger-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ssot-ledger-table {
+    min-width: 420px;
+  }
+
+}
+
+@media (max-width: 380px) {
+  .version-badge {
+    width: 48px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .version-badge-version {
+    border-right: 0;
+    padding-right: 0;
+  }
+
+  .version-badge-action {
+    display: none;
+  }
 }
