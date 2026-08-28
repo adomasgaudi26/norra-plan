@@ -309,6 +309,14 @@ const seedData: SeedTask[] = [
     scores: [1000, 1000, 1000, 1000, 1000, 1000],
     initialElo: 1000,
   },
+  {
+    id: "brief-version-badge-v16",
+    name: "First update version badge to be a floating at the bottom press to open git history and now v16 (list task in norre-plan before you start)",
+    done: false,
+    color: "#000000",
+    scores: [1000, 1000, 1000, 1000, 1000, 1000],
+    initialElo: 1000,
+  },
 ];
 
 const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
@@ -455,6 +463,10 @@ const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
   "brief-local-json-server": {
     codename: "Local JSON Server",
     description: "Persist planner state in a PC JSON file served by the laptop.",
+  },
+  "brief-version-badge-v16": {
+    codename: "Version History",
+    description: "Float the v16 badge and open this repository’s Git history on demand.",
   },
 };
 
