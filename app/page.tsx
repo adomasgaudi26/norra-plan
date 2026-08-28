@@ -326,6 +326,14 @@ const seedData: SeedTask[] = [
     scores: [1000, 1000, 1000, 1000, 1000, 1000],
     initialElo: 1000,
   },
+  {
+    id: "brief-live-planner-data",
+    name: "the website should fetch data from database or local, so that i would see your update or my website edits instantly not like now where i wait for github push and pages deploy - elo 1100",
+    done: false,
+    color: "#000000",
+    scores: [1100, 1100, 1100, 1100, 1100, 1100],
+    initialElo: 1100,
+  },
 ];
 
 const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
@@ -480,6 +488,10 @@ const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
   "brief-mobile-v17": {
     codename: "Mobile v17",
     description: "Rework the planner layout and controls for comfortable small-screen use.",
+  },
+  "brief-live-planner-data": {
+    codename: "Live Planner Data",
+    description: "Fetch shared planner state locally so edits appear without a Pages deployment.",
   },
 };
 
