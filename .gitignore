@@ -1,4 +1,5 @@
 .next/
+out/
 node_modules/
 node_modules.repair-backup/
 node_modules.stale-moved-20260828/
