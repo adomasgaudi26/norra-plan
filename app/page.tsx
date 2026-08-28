@@ -301,6 +301,14 @@ const seedData: SeedTask[] = [
     scores: [1000, 1000, 1000, 1000, 1000, 1000],
     initialElo: 1000,
   },
+  {
+    id: "brief-local-json-server",
+    name: "store plan in pc json use laptop server",
+    done: false,
+    color: "#000000",
+    scores: [1000, 1000, 1000, 1000, 1000, 1000],
+    initialElo: 1000,
+  },
 ];
 
 const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
@@ -444,6 +452,10 @@ const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
     codename: "Human Top Five",
     description: "Place each user-provided task in Top 5 at default 1000 ELO.",
   },
+  "brief-local-json-server": {
+    codename: "Local JSON Server",
+    description: "Persist planner state in a PC JSON file served by the laptop.",
+  },
 };
 
 const DEFAULT_ELO = 500;
@@ -475,16 +487,16 @@ const initialLedger: LedgerEntry[] = initialTasks.flatMap((task) => [
 const MIN_SCORE = 0;
 const MAX_SCORE = 1000;
 const K_FACTOR = 32;
-const STORAGE_KEY = "elo-plan-state-v5";
-const LEDGER_STORAGE_KEY = "norra-elo-ledger-v7";
+const STORAGE_KEY = "elo-plan-state-v6";
+const LEDGER_STORAGE_KEY = "norra-elo-ledger-v8";
 const CATEGORY_STORAGE_KEY = "elo-plan-categories-v1";
 const MAX_SELECTED = 5;
 const INITIAL_TOP_IDS = [
   "brief-human-top-five",
+  "brief-local-json-server",
   "visual-language",
   "sections",
   "catalog",
-  "foundation",
 ];
 const INITIAL_BOTTOM_IDS = ["polish", "responsive", "checks", "task-layer", "screenshot"];
 
