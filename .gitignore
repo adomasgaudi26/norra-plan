@@ -1,0 +1,7 @@
+.next/
+node_modules/
+node_modules.repair-backup/
+node_modules.stale-moved-20260828/
+*.tsbuildinfo
+.env*
+!.env.example
