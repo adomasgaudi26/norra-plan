@@ -37,14 +37,58 @@ input {
   font: inherit;
 }
 
-.version-mark {
-  align-self: flex-end;
-  margin-bottom: 4px;
-  color: rgba(0, 0, 0, 0.45);
+.version-badge {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  border: 1px solid #000000;
+  border-radius: 999px;
+  background: #000000;
+  padding: 0 13px 0 14px;
+  color: #ffffff;
   font-family: "DM Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 9px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   line-height: 1;
+  text-decoration: none;
+  text-transform: uppercase;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.version-badge:hover {
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+.version-badge:focus-visible {
+  outline: 2px solid #000000;
+  outline-offset: 4px;
+}
+
+.version-badge-version {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-right: 1px solid rgba(255, 255, 255, 0.35);
+  padding-right: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+.version-badge:hover .version-badge-version {
+  border-color: rgba(0, 0, 0, 0.28);
+}
+
+.version-badge-action {
+  letter-spacing: 0.08em;
 }
 
 .task-row-shell {
@@ -667,6 +711,13 @@ input {
 }
 
 @media (max-width: 700px) {
+  .version-badge {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    min-height: 42px;
+    padding: 0 12px 0 13px;
+  }
+
   .time-panel-header {
     display: block;
   }

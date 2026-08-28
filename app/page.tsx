@@ -52,6 +52,7 @@ type CategoryState = {
   bottom: string[];
 };
 
+const GIT_HISTORY_URL = "https://github.com/adomasgaudi26/norra-plan/commits/main";
 const periods = ["BRIEF", "FOUNDATION", "BUILD", "POLISH", "QA", "SHIP"];
 
 const seedData: SeedTask[] = [
@@ -955,7 +956,6 @@ export default function Home() {
             <p className="mb-1 font-mono text-[9px] uppercase tracking-[0.22em] text-ink/45">Norré design</p>
             <h1 className="font-display text-4xl font-medium tracking-[-0.07em] text-ink sm:text-5xl">plan</h1>
           </div>
-          <span className="version-mark">v15</span>
         </header>
 
         <section aria-label="Task rating" className="mx-auto mb-7 max-w-xl border-t border-ink/15 pt-5">
@@ -1159,6 +1159,17 @@ export default function Home() {
         </section>
 
       </div>
+
+      <a
+        className="version-badge"
+        href={GIT_HISTORY_URL}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Open Norra plan Git history"
+      >
+        <span className="version-badge-version">v16</span>
+        <span className="version-badge-action">Git history <span aria-hidden="true">↗</span></span>
+      </a>
     </main>
   );
 }
