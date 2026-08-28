@@ -318,6 +318,14 @@ const seedData: SeedTask[] = [
     scores: [1000, 1000, 1000, 1000, 1000, 1000],
     initialElo: 1000,
   },
+  {
+    id: "brief-mobile-v17",
+    name: "now delegate to forked agents from youself - task v17make the whole site more mobile friendly it feels like a desktop version site. We are using next.js right?",
+    done: false,
+    color: "#000000",
+    scores: [1000, 1000, 1000, 1000, 1000, 1000],
+    initialElo: 1000,
+  },
 ];
 
 const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
@@ -468,6 +476,10 @@ const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
   "brief-version-badge-v16": {
     codename: "Version History",
     description: "Float the v16 badge and open this repository’s Git history on demand.",
+  },
+  "brief-mobile-v17": {
+    codename: "Mobile v17",
+    description: "Rework the planner layout and controls for comfortable small-screen use.",
   },
 };
 
