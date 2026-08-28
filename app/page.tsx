@@ -859,6 +859,7 @@ export default function Home() {
             <p className="mb-1 font-mono text-[9px] uppercase tracking-[0.22em] text-ink/45">Norré design</p>
             <h1 className="font-display text-4xl font-medium tracking-[-0.07em] text-ink sm:text-5xl">plan</h1>
           </div>
+          <span className="version-mark">v15</span>
         </header>
 
         <section aria-label="Task rating" className="mx-auto mb-7 max-w-xl border-t border-ink/15 pt-5">
