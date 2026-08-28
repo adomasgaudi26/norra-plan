@@ -285,6 +285,13 @@ const seedData: SeedTask[] = [
     color: "#000000",
     scores: [900, 900, 900, 902, 908, 922],
   },
+  {
+    id: "brief-version-mark",
+    name: "add version mark as v15",
+    done: false,
+    color: "#000000",
+    scores: [500, 500, 500, 500, 500, 500],
+  },
 ];
 
 const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
@@ -420,6 +427,10 @@ const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
     codename: "Provenance Icons",
     description: "Mark agent-created and verbatim human tasks in the planner.",
   },
+  "brief-version-mark": {
+    codename: "Version Mark",
+    description: "Display the current planner release label as v15.",
+  },
 };
 
 const DEFAULT_ELO = 500;
@@ -451,8 +462,8 @@ const initialLedger: LedgerEntry[] = initialTasks.flatMap((task) => [
 const MIN_SCORE = 0;
 const MAX_SCORE = 1000;
 const K_FACTOR = 32;
-const STORAGE_KEY = "elo-plan-state-v3";
-const LEDGER_STORAGE_KEY = "norra-elo-ledger-v5";
+const STORAGE_KEY = "elo-plan-state-v4";
+const LEDGER_STORAGE_KEY = "norra-elo-ledger-v6";
 const CATEGORY_STORAGE_KEY = "elo-plan-categories-v1";
 const MAX_SELECTED = 5;
 const INITIAL_TOP_IDS = [
