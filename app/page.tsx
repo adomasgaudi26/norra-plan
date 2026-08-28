@@ -31,6 +31,7 @@ type Task = {
 type SeedTask = Omit<Task, "history" | "codename" | "description" | "origin"> & {
   scores: number[];
   done?: boolean;
+  initialElo?: number;
 };
 
 type TimeSnapshot = {
@@ -292,6 +293,14 @@ const seedData: SeedTask[] = [
     color: "#000000",
     scores: [500, 500, 500, 500, 500, 500],
   },
+  {
+    id: "brief-human-top-five",
+    name: "every task i give you should be in the top 5 with default 1000elo",
+    done: false,
+    color: "#000000",
+    scores: [1000, 1000, 1000, 1000, 1000, 1000],
+    initialElo: 1000,
+  },
 ];
 
 const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
@@ -431,15 +440,19 @@ const taskDetails: Record<string, Pick<Task, "codename" | "description">> = {
     codename: "Version Mark",
     description: "Display the current planner release label as v15.",
   },
+  "brief-human-top-five": {
+    codename: "Human Top Five",
+    description: "Place each user-provided task in Top 5 at default 1000 ELO.",
+  },
 };
 
 const DEFAULT_ELO = 500;
 
-const initialTasks: Task[] = seedData.map(({ scores: _scores, done: _legacyDone, ...task }) => ({
+const initialTasks: Task[] = seedData.map(({ scores: _scores, done: _legacyDone, initialElo = DEFAULT_ELO, ...task }) => ({
   ...task,
   ...taskDetails[task.id],
   origin: task.id.startsWith("brief-") ? "human" : "agent",
-  history: periods.map((date) => ({ date, score: DEFAULT_ELO })),
+  history: periods.map((date) => ({ date, score: initialElo })),
 }));
 
 const INITIAL_TIME_MINUTES = 16 * 60 + 45;
@@ -462,16 +475,16 @@ const initialLedger: LedgerEntry[] = initialTasks.flatMap((task) => [
 const MIN_SCORE = 0;
 const MAX_SCORE = 1000;
 const K_FACTOR = 32;
-const STORAGE_KEY = "elo-plan-state-v4";
-const LEDGER_STORAGE_KEY = "norra-elo-ledger-v6";
+const STORAGE_KEY = "elo-plan-state-v5";
+const LEDGER_STORAGE_KEY = "norra-elo-ledger-v7";
 const CATEGORY_STORAGE_KEY = "elo-plan-categories-v1";
 const MAX_SELECTED = 5;
 const INITIAL_TOP_IDS = [
+  "brief-human-top-five",
   "visual-language",
   "sections",
   "catalog",
   "foundation",
-  "header",
 ];
 const INITIAL_BOTTOM_IDS = ["polish", "responsive", "checks", "task-layer", "screenshot"];
 
