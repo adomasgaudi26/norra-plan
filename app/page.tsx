@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -51,6 +51,16 @@ type CategoryState = {
   top: string[];
   bottom: string[];
 };
+
+type PlannerSnapshot = {
+  schemaVersion: 1;
+  tasks: Task[];
+  categories: CategoryState;
+  ledger: LedgerEntry[];
+  deletedTaskIds: string[];
+};
+
+type PlannerSyncStatus = "connecting" | "live" | "local";
 
 const GIT_HISTORY_URL = "https://github.com/adomasgaudi26/norra-plan/commits/main";
 const periods = ["BRIEF", "FOUNDATION", "BUILD", "POLISH", "QA", "SHIP"];
@@ -528,12 +538,14 @@ const initialLedger: LedgerEntry[] = initialTasks.flatMap((task) => [
 ]);
 
 const MIN_SCORE = 0;
-const MAX_SCORE = 1000;
 const K_FACTOR = 32;
 const STORAGE_KEY = "elo-plan-state-v6";
 const LEDGER_STORAGE_KEY = "norra-elo-ledger-v8";
 const CATEGORY_STORAGE_KEY = "elo-plan-categories-v1";
 const DELETED_TASK_IDS_KEY = "elo-plan-deleted-task-ids-v1";
+const PLANNER_SCHEMA_VERSION = 1;
+const PLANNER_POLL_INTERVAL_MS = 2000;
+const PLANNER_REQUEST_TIMEOUT_MS = 1800;
 const INITIAL_TOP_IDS = [
   ...initialTasks
     .filter((task) => task.origin === "human")
@@ -591,8 +603,160 @@ function getTaskOrigin(id: string): TaskOrigin {
   return id.startsWith("brief-") ? "human" : "agent";
 }
 
-function getWidth(score: number) {
-  return `${Math.min(100, Math.max(2, ((score - MIN_SCORE) / (MAX_SCORE - MIN_SCORE)) * 100))}%`;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isPlannerTask(value: unknown): value is Task {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.codename === "string" &&
+    typeof value.description === "string" &&
+    (value.origin === "agent" || value.origin === "human") &&
+    value.color === "#000000" &&
+    Array.isArray(value.history) &&
+    value.history.length === periods.length &&
+    value.history.every(
+      (snapshot) =>
+        isRecord(snapshot) &&
+        typeof snapshot.date === "string" &&
+        isFiniteNumber(snapshot.score),
+    )
+  );
+}
+
+function parsePlannerSnapshot(value: unknown): PlannerSnapshot | null {
+  if (!isRecord(value) || value.schemaVersion !== PLANNER_SCHEMA_VERSION) return null;
+
+  const tasks = value.tasks;
+  const categories = value.categories;
+  const ledger = value.ledger;
+  const deletedTaskIds = value.deletedTaskIds;
+  if (!Array.isArray(tasks) || !tasks.every(isPlannerTask)) return null;
+  if (!isRecord(categories)) return null;
+  if (!Array.isArray(categories.top) || !Array.isArray(categories.bottom)) return null;
+  if (
+    categories.top.length > MAX_SELECTED ||
+    categories.bottom.length > MAX_SELECTED ||
+    !categories.top.every((id) => typeof id === "string") ||
+    !categories.bottom.every((id) => typeof id === "string") ||
+    new Set([...categories.top, ...categories.bottom]).size !==
+      categories.top.length + categories.bottom.length
+  ) {
+    return null;
+  }
+  if (
+    !Array.isArray(ledger) ||
+    !ledger.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.taskId === "string" &&
+        isFiniteNumber(entry.snapshotId) &&
+        isFiniteNumber(entry.minute) &&
+        isFiniteNumber(entry.elo),
+    )
+  ) {
+    return null;
+  }
+  if (!Array.isArray(deletedTaskIds) || !deletedTaskIds.every((id) => typeof id === "string")) {
+    return null;
+  }
+
+  return {
+    schemaVersion: PLANNER_SCHEMA_VERSION,
+    tasks: tasks as Task[],
+    categories: {
+      top: categories.top as string[],
+      bottom: categories.bottom as string[],
+    },
+    ledger: ledger as LedgerEntry[],
+    deletedTaskIds: deletedTaskIds as string[],
+  };
+}
+
+function mergeSeedTasks(taskList: Task[], deletedTaskIds: Set<string>) {
+  const storedTaskIds = new Set(taskList.map((task) => task.id));
+  return [
+    ...taskList,
+    ...initialTasks.filter(
+      (task) => !storedTaskIds.has(task.id) && !deletedTaskIds.has(task.id),
+    ),
+  ];
+}
+
+function mergeSeedLedger(ledgerList: LedgerEntry[], deletedTaskIds: Set<string>) {
+  const recordedTaskIds = new Set(ledgerList.map((entry) => entry.taskId));
+  return [
+    ...ledgerList,
+    ...initialLedger.filter(
+      (entry) => !recordedTaskIds.has(entry.taskId) && !deletedTaskIds.has(entry.taskId),
+    ),
+  ];
+}
+
+function getPlannerApiUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_PLANNER_API_URL?.trim();
+  if (configuredUrl) return configuredUrl.replace(/\/+$/, "");
+  if (typeof window === "undefined" || window.location.protocol !== "http:") return "";
+
+  const host = window.location.hostname;
+  const isPrivateNetworkHost =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  if (!isPrivateNetworkHost) return "";
+
+  const formattedHost = host.includes(":") ? `[${host}]` : host;
+  return `http://${formattedHost}:8787/api/planner`;
+}
+
+async function fetchPlannerEnvelope(url: string, init?: RequestInit): Promise<{
+  snapshot: PlannerSnapshot;
+  revision: number;
+}> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), PLANNER_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    if (!response.ok) throw new Error(`Planner server returned ${response.status}`);
+    const raw: unknown = await response.json();
+    const snapshot = parsePlannerSnapshot(raw);
+    if (!snapshot) throw new Error("Planner server returned an invalid snapshot");
+    const revision = isRecord(raw) && isFiniteNumber(raw.revision) ? raw.revision : Date.now();
+    return { snapshot, revision };
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function getScoreScaleMax(taskList: Task[], ledgerEntries: LedgerEntry[]) {
+  const highestScore = Math.max(
+    DEFAULT_ELO,
+    ...taskList.flatMap((task) => task.history.map((snapshot) => snapshot.score)),
+    ...ledgerEntries.map((entry) => entry.elo),
+  );
+  if (highestScore <= 1000) return 1000;
+  return Math.ceil((highestScore + 100) / 100) * 100;
+}
+
+function getScoreTicks(scaleMax: number) {
+  const ticks = [0];
+  for (let tick = 500; tick < scaleMax; tick += 500) ticks.push(tick);
+  if (!ticks.includes(scaleMax)) ticks.push(scaleMax);
+  return ticks;
+}
+
+function getWidth(score: number, scaleMax: number) {
+  return `${Math.min(100, Math.max(2, ((score - MIN_SCORE) / (scaleMax - MIN_SCORE)) * 100))}%`;
 }
 
 function getRating(winnerScore: number, loserScore: number) {
@@ -631,10 +795,18 @@ export default function Home() {
   const [storageReady, setStorageReady] = useState(false);
   const [categoryStorageReady, setCategoryStorageReady] = useState(false);
   const [ledgerStorageReady, setLedgerStorageReady] = useState(false);
+  const [deletedTaskIds, setDeletedTaskIds] = useState<string[]>([]);
+  const [plannerApiUrl, setPlannerApiUrl] = useState("");
+  const [remoteStorageReady, setRemoteStorageReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<PlannerSyncStatus>("connecting");
+  const remoteRevisionRef = useRef(0);
+  const remoteWriteTimerRef = useRef<number | null>(null);
 
   const selected = categories.top;
 
   useEffect(() => {
+    const localDeletedTaskIds = getDeletedTaskIds();
+    setDeletedTaskIds([...localDeletedTaskIds]);
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
@@ -644,10 +816,9 @@ export default function Home() {
           origin: task.origin ?? getTaskOrigin(task.id),
         }));
         const knownTaskIds = new Set(initialTasks.map((task) => task.id));
-        const deletedTaskIds = getDeletedTaskIds();
         const storedTaskIds = new Set(normalized.map((task) => task.id));
         const newlySeededTasks = initialTasks.filter(
-          (task) => !storedTaskIds.has(task.id) && !deletedTaskIds.has(task.id),
+          (task) => !storedTaskIds.has(task.id) && !localDeletedTaskIds.has(task.id),
         );
         const valid =
           Array.isArray(parsed) &&
@@ -672,6 +843,12 @@ export default function Home() {
     }
     setStorageReady(true);
   }, []);
+
+  useEffect(() => {
+    if (storageReady) {
+      window.localStorage.setItem(DELETED_TASK_IDS_KEY, JSON.stringify(deletedTaskIds));
+    }
+  }, [deletedTaskIds, storageReady]);
 
   useEffect(() => {
     if (storageReady) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
@@ -753,6 +930,140 @@ export default function Home() {
     }
   }, [ledger, ledgerStorageReady]);
 
+  useEffect(() => {
+    const apiUrl = getPlannerApiUrl();
+    setPlannerApiUrl(apiUrl);
+    if (!apiUrl) {
+      setSyncStatus("local");
+      setRemoteStorageReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadRemotePlanner() {
+      try {
+        const { snapshot, revision } = await fetchPlannerEnvelope(apiUrl);
+        if (cancelled) return;
+        remoteRevisionRef.current = revision;
+        const localDeletedTaskIds = getDeletedTaskIds();
+        const remoteDeletedTaskIds = new Set([
+          ...localDeletedTaskIds,
+          ...snapshot.deletedTaskIds,
+        ]);
+        const mergedTasks = mergeSeedTasks(snapshot.tasks, remoteDeletedTaskIds);
+        const mergedLedger = mergeSeedLedger(snapshot.ledger, remoteDeletedTaskIds);
+        const mergedCategories = promoteHumanTasks(snapshot.categories, mergedTasks);
+        setDeletedTaskIds([...remoteDeletedTaskIds]);
+        if (snapshot.tasks.length > 0) {
+          setTasks(mergedTasks);
+          setCategories(mergedCategories);
+          setLedger(mergedLedger);
+        }
+        setSyncStatus("live");
+      } catch {
+        if (!cancelled) setSyncStatus("local");
+      } finally {
+        if (!cancelled) setRemoteStorageReady(true);
+      }
+    }
+
+    void loadRemotePlanner();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!plannerApiUrl || !remoteStorageReady || !storageReady) return;
+
+    let cancelled = false;
+    async function pullRemotePlanner() {
+      try {
+        const { snapshot, revision } = await fetchPlannerEnvelope(plannerApiUrl);
+        if (cancelled) return;
+        setSyncStatus("live");
+        if (revision <= remoteRevisionRef.current) return;
+        remoteRevisionRef.current = revision;
+        const deleted = new Set([
+          ...getDeletedTaskIds(),
+          ...snapshot.deletedTaskIds,
+        ]);
+        const mergedTasks = mergeSeedTasks(snapshot.tasks, deleted);
+        setDeletedTaskIds([...deleted]);
+        setTasks(mergedTasks);
+        setCategories(promoteHumanTasks(snapshot.categories, mergedTasks));
+        setLedger(mergeSeedLedger(snapshot.ledger, deleted));
+      } catch {
+        if (!cancelled) setSyncStatus("local");
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void pullRemotePlanner();
+    }, PLANNER_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [plannerApiUrl, remoteStorageReady, storageReady]);
+
+  useEffect(() => {
+    if (
+      !plannerApiUrl ||
+      !remoteStorageReady ||
+      !storageReady ||
+      !categoryStorageReady ||
+      !ledgerStorageReady
+    ) {
+      return;
+    }
+
+    if (remoteWriteTimerRef.current !== null) {
+      window.clearTimeout(remoteWriteTimerRef.current);
+    }
+
+    const snapshot: PlannerSnapshot = {
+      schemaVersion: PLANNER_SCHEMA_VERSION,
+      tasks,
+      categories,
+      ledger,
+      deletedTaskIds,
+    };
+    remoteWriteTimerRef.current = window.setTimeout(() => {
+      void fetchPlannerEnvelope(plannerApiUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snapshot),
+      })
+        .then(({ revision }) => {
+          remoteRevisionRef.current = revision;
+          setSyncStatus("live");
+        })
+        .catch(() => {
+          setSyncStatus("local");
+        })
+        .finally(() => {
+          remoteWriteTimerRef.current = null;
+        });
+    }, 250);
+
+    return () => {
+      if (remoteWriteTimerRef.current !== null) {
+        window.clearTimeout(remoteWriteTimerRef.current);
+        remoteWriteTimerRef.current = null;
+      }
+    };
+  }, [
+    categories,
+    deletedTaskIds,
+    ledger,
+    ledgerStorageReady,
+    plannerApiUrl,
+    remoteStorageReady,
+    storageReady,
+    tasks,
+  ]);
+
   const rankedTasks = useMemo(
     () =>
       tasks
@@ -762,6 +1073,14 @@ export default function Home() {
           return selectedDifference || b.currentScore - a.currentScore;
         }),
     [periodIndex, selected, tasks],
+  );
+  const scoreScaleMax = useMemo(
+    () => getScoreScaleMax(tasks, ledger),
+    [ledger, tasks],
+  );
+  const scoreTicks = useMemo(
+    () => getScoreTicks(scoreScaleMax),
+    [scoreScaleMax],
   );
 
   const topTaskIds = new Set(categories.top);
@@ -863,6 +1182,7 @@ export default function Home() {
     setLedger((current) => current.filter((entry) => entry.taskId !== taskId));
     const deletedTaskIds = getDeletedTaskIds();
     deletedTaskIds.add(taskId);
+    setDeletedTaskIds([...deletedTaskIds]);
     window.localStorage.setItem(DELETED_TASK_IDS_KEY, JSON.stringify([...deletedTaskIds]));
   }
 
@@ -922,7 +1242,7 @@ export default function Home() {
             <div className="absolute inset-0 opacity-35 [background-image:linear-gradient(to_right,transparent_0,transparent_calc(33.33%_-_1px),rgba(0,0,0,0.15)_33.33%,transparent_calc(33.33%_+_1px),transparent_calc(66.66%_-_1px),rgba(0,0,0,0.15)_66.66%,transparent_calc(66.66%_+_1px))]" />
             <div
               className="bar-fill absolute inset-y-0 left-0"
-              style={{ width: getWidth(task.currentScore), backgroundColor: task.color }}
+              style={{ width: getWidth(task.currentScore, scoreScaleMax), backgroundColor: task.color }}
             >
               <span className="bar-codename">
                 <OriginMarker origin={task.origin} />
@@ -971,8 +1291,8 @@ export default function Home() {
   return (
     <main
       className="min-h-screen px-5 py-8 sm:px-8 sm:py-12"
-      aria-busy={!storageReady || !categoryStorageReady || !ledgerStorageReady}
-      style={{ visibility: storageReady && categoryStorageReady && ledgerStorageReady ? "visible" : "hidden" }}
+      aria-busy={!storageReady || !categoryStorageReady || !ledgerStorageReady || !remoteStorageReady}
+      style={{ visibility: storageReady && categoryStorageReady && ledgerStorageReady && remoteStorageReady ? "visible" : "hidden" }}
     >
       <div className="mx-auto w-full max-w-4xl">
         <header className="mb-10 flex items-end justify-between border-b border-ink/15 pb-4">
@@ -1012,7 +1332,7 @@ export default function Home() {
             <div className="flex justify-between font-mono text-[9px] uppercase tracking-[0.16em] text-ink/35">
               <span>0</span>
               <span>500</span>
-              <span>1000</span>
+              <span>{formatScore(scoreScaleMax)}</span>
             </div>
           </div>
 
@@ -1056,9 +1376,10 @@ export default function Home() {
                 <p className="time-panel-note">Each recorded action adds one equally spaced point.</p>
               </div>
               <div className="time-panel-controls">
-                <div className="time-status">
+                <div className="time-status" aria-live="polite">
                   <span className="live-pip" aria-hidden="true" />
                   <span>{formatTimelineTime(latestTimeSnapshot?.minute ?? INITIAL_TIME_MINUTES)}</span>
+                  <span>{syncStatus === "live" ? "Live JSON" : syncStatus === "connecting" ? "Connecting" : "Local fallback"}</span>
                   <span>Last recorded</span>
                 </div>
                 <button type="button" className="record-snapshot-button" onClick={recordSnapshot}>
@@ -1088,8 +1409,8 @@ export default function Home() {
                     tick={{ fill: "rgba(0,0,0,0.48)", fontFamily: "DM Mono", fontSize: 9 }}
                   />
                   <YAxis
-                    domain={[MIN_SCORE, MAX_SCORE]}
-                    ticks={[0, DEFAULT_ELO, MAX_SCORE]}
+                    domain={[MIN_SCORE, scoreScaleMax]}
+                    ticks={scoreTicks}
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: "rgba(0,0,0,0.48)", fontFamily: "DM Mono", fontSize: 9 }}
